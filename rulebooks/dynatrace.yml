@@ -1,0 +1,14 @@
+---
+- name: Dynatrace webhook test
+  hosts: all
+
+  sources:
+    - ansible.eda.webhook:
+        host: 0.0.0.0
+        port: 5000
+
+  rules:
+    - name: Receive webhook
+      condition: event.payload is defined
+      action:
+        debug:
