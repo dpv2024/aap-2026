@@ -1,9 +1,15 @@
 ---
-- name: Restart Linux server
+- name: Print the uptime of the server.
   hosts: all
   become: true
 
   tasks:
-    - name: Restart server
-      ansible.builtin.command: 'sudo init 6'
+    - name: Get server uptime
+      ansible.builtin.shell: uptime
+      register: server_uptime
+      changed_when: false
+
+    - name: Print server uptime
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }} uptime: {{ server_uptime.stdout }}"
          
