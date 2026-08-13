@@ -5,5 +5,5 @@
 
   tasks:
     - name: Restart server
-      ansible.builtin.command: 'uptime'
+      ansible.builtin.command: 'init 6'
          
