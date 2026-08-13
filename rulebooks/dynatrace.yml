@@ -11,6 +11,5 @@
     - name: Receive webhook
       condition: event is defined
       action:
-        run_job_template:
-          name: Restart Linux Server
+        debug:
           
