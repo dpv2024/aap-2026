@@ -1,5 +1,4 @@
 ---
----
 - name: webhook test
   hosts: all
 
