@@ -1,5 +1,5 @@
 ---
-- name: Print the uptime of the server.
+- name: Uptimecheck
   hosts: all
   become: true
 
