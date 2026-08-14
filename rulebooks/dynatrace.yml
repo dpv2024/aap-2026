@@ -1,5 +1,6 @@
 ---
-- name: Dynatrace webhook test
+---
+- name: webhook test
   hosts: all
 
   sources:
@@ -9,7 +10,7 @@
 
   rules:
     - name: Receive webhook
-      condition: event is defined
+      condition: event.payload is defined
       action:
         debug:
           
