@@ -11,4 +11,5 @@
     - name: Receive webhook
       condition: event.payload is defined
       action:
-         debug:
+        run_job_template:
+          name: Uptimecheck
