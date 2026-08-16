@@ -9,7 +9,7 @@
 
   rules:
     - name: Receive webhook
-      condition: event.payload is defined
+      condition: event.payload.payload.event == "AVAILABILITY"
       action:
-        debug:
-          msg: "{{ event.payload }}"
+        run_job_template:
+          name: Uptimecheck
