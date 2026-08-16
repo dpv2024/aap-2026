@@ -1,0 +1,107 @@
+---
+- name: RHEL Disk Cleanup
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    disk_threshold: 80
+    temp_file_age_days: 7
+    log_file_age_days: 30
+    journal_max_size: 500M
+
+  tasks:
+
+    - name: Check root filesystem usage
+      ansible.builtin.shell: |
+        df -P / | awk 'NR==2 {gsub("%","",$5); print $5}'
+      register: disk_usage
+      changed_when: false
+
+    - name: Display current disk usage
+      ansible.builtin.debug:
+        msg: "Root filesystem usage is {{ disk_usage.stdout }}%"
+
+    - name: Perform cleanup when disk usage is above threshold
+      when: disk_usage.stdout | int >= disk_threshold
+      block:
+
+        - name: Clean DNF cache
+          ansible.builtin.command:
+            cmd: dnf clean all
+          changed_when: true
+
+        - name: Clean systemd journal
+          ansible.builtin.command:
+            cmd: journalctl --vacuum-size={{ journal_max_size }}
+          register: journal_cleanup
+          changed_when: true
+
+        - name: Find old files in /tmp
+          ansible.builtin.find:
+            paths: /tmp
+            age: "{{ temp_file_age_days }}d"
+            age_stamp: mtime
+            file_type: file
+            recurse: true
+          register: tmp_files
+
+        - name: Remove old /tmp files
+          ansible.builtin.file:
+            path: "{{ item.path }}"
+            state: absent
+          loop: "{{ tmp_files.files }}"
+          loop_control:
+            label: "{{ item.path }}"
+
+        - name: Find old files in /var/tmp
+          ansible.builtin.find:
+            paths: /var/tmp
+            age: "{{ temp_file_age_days }}d"
+            age_stamp: mtime
+            file_type: file
+            recurse: true
+          register: vartmp_files
+
+        - name: Remove old /var/tmp files
+          ansible.builtin.file:
+            path: "{{ item.path }}"
+            state: absent
+          loop: "{{ vartmp_files.files }}"
+          loop_control:
+            label: "{{ item.path }}"
+
+        - name: Find old compressed logs
+          ansible.builtin.find:
+            paths: /var/log
+            age: "{{ log_file_age_days }}d"
+            age_stamp: mtime
+            patterns:
+              - "*.gz"
+              - "*.old"
+            file_type: file
+            recurse: true
+          register: old_logs
+
+        - name: Remove old compressed logs
+          ansible.builtin.file:
+            path: "{{ item.path }}"
+            state: absent
+          loop: "{{ old_logs.files }}"
+          loop_control:
+            label: "{{ item.path }}"
+
+        - name: Check disk usage after cleanup
+          ansible.builtin.shell: |
+            df -h /
+          register: disk_after
+          changed_when: false
+
+        - name: Display disk usage after cleanup
+          ansible.builtin.debug:
+            var: disk_after.stdout
+
+    - name: No cleanup required
+      ansible.builtin.debug:
+        msg: "Disk usage is below {{ disk_threshold }}%. No cleanup required."
+      when: disk_usage.stdout | int < disk_threshold
