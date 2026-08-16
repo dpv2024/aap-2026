@@ -9,10 +9,7 @@
 
   rules:
     - name: Receive webhook
-      condition: >
-        event.payload is defined and
-        event.payload.eventType is defined and
-        event.payload.eventType == "AVAILABILITY"
+      condition: event.payload.eventType == "AVAILABILITY"
       action:
         run_job_template:
           name: Uptimecheck
