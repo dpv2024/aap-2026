@@ -1,0 +1,19 @@
+---
+- name: webhook test
+  hosts: all
+
+  sources:
+    - ansible.eda.webhook:
+        host: 0.0.0.0
+        port: 5002
+
+  rules:
+    - name: Receive webhook
+      condition: >
+        event.payload is defined and
+        event.payload.eventType is defined and
+        event.payload.eventType == "AVAILABILITY"
+      action:
+        run_job_template:
+          name: Uptimecheck
+          organization: Default
