@@ -11,40 +11,9 @@
 
     # Disk space event
     - name: Disk space alert
-      condition: >
-        event.payload is defined and
-        event.payload.event_type == "disk"
+      condition: event.payload is defined 
       action:
         run_job_template:
           name: Disk Space Check
           organization: Default
 
-    # CPU utilization event
-    - name: CPU alert
-      condition: >
-        event.payload is defined and
-        event.payload.event_type == "cpu"
-      action:
-        run_job_template:
-          name: CPU Check
-          organization: Default
-
-    # Memory utilization event
-    - name: Memory alert
-      condition: >
-        event.payload is defined and
-        event.payload.event_type == "memory"
-      action:
-        run_job_template:
-          name: Memory Check
-          organization: Default
-
-    # Uptime event
-    - name: Uptime event
-      condition: >
-        event.payload is defined and
-        event.payload.event_type == "uptime"
-      action:
-        run_job_template:
-          name: Uptimecheck
-          organization: Default
