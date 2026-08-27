@@ -104,6 +104,7 @@
         file_type: file
       register: abc_files
       when: cleanup_required
+      become: true
 
     - name: Delete abc.gz files
       ansible.builtin.file:
@@ -113,6 +114,7 @@
       when:
         - cleanup_required
         - abc_files.files | length > 0
+      become: true
 
     # ---------------------------------------------------------
     # 7. Clean archived journals
