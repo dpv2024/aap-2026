@@ -8,23 +8,22 @@
   vars:
     usage_threshold: 80
     target_vg: root-vg
-
-    # Extend each affected LV by 5 GB
-    extend_size: 5G
-    extend_size_gb: 5
+    extend_size: 1G
 
   tasks:
 
-    # =========================================================
-    # 1. Get all LVs belonging to root-vg
-    # =========================================================
-
-    - name: Get root-vg logical volumes
-      ansible.builtin.command:
-        cmd: >
-          lvs --noheadings --separator '|'
-          -o lv_name,vg_name,lv_path
-          {{ target_vg }}
+    # ---------------------------------------------------------
+    # 1. Get all mounted filesystems belonging to root-vg
+    # ---------------------------------------------------------
+    - name: Get root-vg logical volumes and mount points
+      ansible.builtin.shell: |
+        lvs --noheadings --separator '|' \
+          -o lv_name,vg_name,lv_path |
+        awk -F'|' '$2 ~ /{{ target_vg }}/ {
+          gsub(/^[ \t]+|[ \t]+$/, "", $1);
+          gsub(/^[ \t]+|[ \t]+$/, "", $3);
+          print $1 "|" $3
+        }'
       register: rootvg_lvs
       changed_when: false
 
@@ -32,23 +31,15 @@
       ansible.builtin.debug:
         var: rootvg_lvs.stdout_lines
 
-
-    # =========================================================
-    # 2. Find mounted root-vg filesystems
-    # =========================================================
-
+    # ---------------------------------------------------------
+    # 2. Build list of mounted root-vg filesystems
+    # ---------------------------------------------------------
     - name: Get mount points for root-vg LVs
       ansible.builtin.shell: |
         findmnt -rn -o SOURCE,TARGET,FSTYPE |
-        while read -r source target fstype; do
-
-          vg=$(lvs --noheadings -o vg_name "$source" 2>/dev/null | xargs)
-
-          if [ "$vg" = "{{ target_vg }}" ]; then
-            echo "$source|$target|$fstype"
-          fi
-
-        done
+        awk '$1 ~ "^/dev/mapper/{{ target_vg | replace("-", "--") }}-" {
+          print
+        }'
       register: rootvg_mounts
       changed_when: false
 
@@ -56,67 +47,53 @@
       ansible.builtin.debug:
         var: rootvg_mounts.stdout_lines
 
-
-    # =========================================================
-    # 3. Check filesystem usage
-    # =========================================================
-
+    # ---------------------------------------------------------
+    # 3. Check usage of all root-vg filesystems
+    # ---------------------------------------------------------
     - name: Check root-vg filesystem usage
       ansible.builtin.shell: |
-        df -P "{{ item.split('|')[1] }}" |
-        awk 'NR==2 {
-          gsub("%","",$5);
-          print $5
-        }'
+        df -P "{{ item.split()[1] }}" |
+        awk 'NR==2 {gsub("%","",$5); print $5}'
       loop: "{{ rootvg_mounts.stdout_lines }}"
       register: filesystem_usage
       changed_when: false
 
     - name: Display filesystem usage
       ansible.builtin.debug:
-        msg:
-          - "Filesystem: {{ item.item.split('|')[1] }}"
-          - "LV: {{ item.item.split('|')[0] }}"
-          - "FSType: {{ item.item.split('|')[2] }}"
-          - "Usage: {{ item.stdout | trim }}%"
+        msg: "{{ item.item }} => {{ item.stdout }}%"
       loop: "{{ filesystem_usage.results }}"
 
-
-    # =========================================================
+    # ---------------------------------------------------------
     # 4. Determine whether cleanup is required
-    # =========================================================
-
-    - name: Initialize cleanup flag
+    # ---------------------------------------------------------
+    - name: Set cleanup required flag
       ansible.builtin.set_fact:
-        cleanup_required: false
-
-    - name: Determine whether cleanup is required
-      ansible.builtin.set_fact:
-        cleanup_required: true
-      loop: "{{ filesystem_usage.results }}"
-      when:
-        - item.stdout is defined
-        - item.stdout | trim | int >= usage_threshold
+        cleanup_required: >-
+          {{
+            filesystem_usage.results
+            | selectattr('stdout', 'defined')
+            | map(attribute='stdout')
+            | map('int')
+            | select('ge', usage_threshold)
+            | list
+            | length > 0
+          }}
 
     - name: Display cleanup status
       ansible.builtin.debug:
         msg: "Cleanup required: {{ cleanup_required }}"
 
-
-    # =========================================================
-    # 5. Clean DNF cache
-    # =========================================================
-
+    # ---------------------------------------------------------
+    # 5. DNF cleanup
+    # ---------------------------------------------------------
     - name: Clean DNF cache
       ansible.builtin.command:
         cmd: dnf clean all
-      when: cleanup_required | bool
+      when: cleanup_required
 
-
-    # =========================================================
-    # 6. Find abc.gz files
-    # =========================================================
-
+    # ---------------------------------------------------------
+    # 6. Delete abc.gz files
+    # ---------------------------------------------------------
     - name: Find abc.gz files
       ansible.builtin.find:
         paths:
@@ -126,222 +103,85 @@
         recurse: true
         file_type: file
       register: abc_files
-      when: cleanup_required | bool
-
-
-    # =========================================================
-    # 7. Display abc.gz files found
-    # =========================================================
-
-    - name: Display abc.gz files found
-      ansible.builtin.debug:
-        msg: >-
-          Found {{ abc_files.files | default([]) | length }}
-          abc.gz file(s)
-      when: cleanup_required | bool
-
-
-    # =========================================================
-    # 8. Delete abc.gz files
-    # =========================================================
+      when: cleanup_required
 
     - name: Delete abc.gz files
       ansible.builtin.file:
         path: "{{ item.path }}"
         state: absent
-      loop: "{{ abc_files.files | default([]) }}"
+      loop: "{{ abc_files.files }}"
       when:
-        - cleanup_required | bool
-        - abc_files.files | default([]) | length > 0
+        - cleanup_required
+        - abc_files.files | length > 0
 
-
-    # =========================================================
-    # 9. Clean archived journals
-    # =========================================================
-
+    # ---------------------------------------------------------
+    # 7. Clean archived journals
+    # ---------------------------------------------------------
     - name: Clean archived journal files
       ansible.builtin.command:
         cmd: journalctl --vacuum-time=7d
-      when: cleanup_required | bool
+      when: cleanup_required
 
-
-    # =========================================================
-    # 10. Recheck filesystem usage after cleanup
-    # =========================================================
-
+    # ---------------------------------------------------------
+    # 8. Recheck all root-vg filesystems
+    # ---------------------------------------------------------
     - name: Recheck root-vg filesystem usage
       ansible.builtin.shell: |
-        df -P "{{ item.split('|')[1] }}" |
-        awk 'NR==2 {
-          gsub("%","",$5);
-          print $5
-        }'
+        df -P "{{ item.split()[1] }}" |
+        awk 'NR==2 {gsub("%","",$5); print $5}'
       loop: "{{ rootvg_mounts.stdout_lines }}"
       register: filesystem_usage_after_cleanup
       changed_when: false
 
     - name: Display usage after cleanup
       ansible.builtin.debug:
-        msg:
-          - "Filesystem: {{ item.item.split('|')[1] }}"
-          - "Usage after cleanup: {{ item.stdout | trim }}%"
+        msg: "{{ item.item }} => {{ item.stdout }}%"
       loop: "{{ filesystem_usage_after_cleanup.results }}"
 
-
-    # =========================================================
-    # 11. Determine whether LV expansion is required
-    # =========================================================
-
-    - name: Initialize expansion flag
+    # ---------------------------------------------------------
+    # 9. Find filesystems still >= 80%
+    # ---------------------------------------------------------
+    - name: Identify filesystems requiring LV expansion
       ansible.builtin.set_fact:
-        expansion_required: false
+        filesystems_to_extend: >-
+          {{
+            filesystem_usage_after_cleanup.results
+            | selectattr('stdout', 'defined')
+            | selectattr('stdout', 'match', '^[0-9]+$')
+            | selectattr('stdout', 'ge', usage_threshold | string)
+            | map(attribute='item')
+            | list
+          }}
 
-    - name: Determine whether expansion is required
-      ansible.builtin.set_fact:
-        expansion_required: true
-      loop: "{{ filesystem_usage_after_cleanup.results }}"
-      when:
-        - item.stdout is defined
-        - item.stdout | trim | int >= usage_threshold
-
-    - name: Display expansion status
+    - name: Display filesystems requiring expansion
       ansible.builtin.debug:
-        msg: "Expansion required: {{ expansion_required }}"
+        var: filesystems_to_extend
 
-
-    # =========================================================
-    # 12. Check root-vg free space
-    # =========================================================
-
-    - name: Check root-vg free space
-      ansible.builtin.command:
-        cmd: >
-          vgs --noheadings
-          --units g
-          --nosuffix
-          -o vg_free
-          {{ target_vg }}
+    # ---------------------------------------------------------
+    # 10. Check free space in root-vg
+    # ---------------------------------------------------------
+    - name: Check free space in root-vg
+      ansible.builtin.shell: |
+        vgs --noheadings --units g --nosuffix \
+          -o vg_free "{{ target_vg }}" |
+          awk '{print $1}'
       register: rootvg_free
       changed_when: false
-      when: expansion_required | bool
-
-
-    # =========================================================
-    # 13. Convert VG free space to number
-    # =========================================================
-
-    - name: Set root-vg free space in GB
-      ansible.builtin.set_fact:
-        rootvg_free_gb: "{{ rootvg_free.stdout | trim | float }}"
-      when: expansion_required | bool
-
-
-    # =========================================================
-    # 14. Display VG free space
-    # =========================================================
+      when: filesystems_to_extend | length > 0
 
     - name: Display root-vg free space
       ansible.builtin.debug:
-        msg:
-          - "VG: {{ target_vg }}"
-          - "Raw VG free: '{{ rootvg_free.stdout | trim }}'"
-          - "VG free: {{ rootvg_free_gb }} GB"
-          - "Required for extension: {{ extend_size_gb }} GB"
-      when: expansion_required | bool
+        msg: "{{ target_vg }} has {{ rootvg_free.stdout | trim }} GB free"
+      when: filesystems_to_extend | length > 0
 
-
-    # =========================================================
-    # 15. Verify enough VG space
-    # =========================================================
-
-    - name: Verify enough free space exists
-      ansible.builtin.assert:
-        that:
-          - rootvg_free_gb | float >= extend_size_gb | float
-        fail_msg: >-
-          Insufficient free space in {{ target_vg }}.
-          Available: {{ rootvg_free_gb }} GB.
-          Required: {{ extend_size_gb }} GB.
-        success_msg: >-
-          Sufficient free space available in {{ target_vg }}:
-          {{ rootvg_free_gb }} GB.
-      when: expansion_required | bool
-
-
-    # =========================================================
-    # 16. Extend affected logical volumes
-    # =========================================================
-
-    - name: Extend affected logical volumes by 5 GB
+    # ---------------------------------------------------------
+    # 11. Extend affected LV by 5 GB
+    # ---------------------------------------------------------
+    - name: Extend affected logical volume by 5 GB
       ansible.builtin.command:
-        cmd: >
-          lvextend -r
-          -L +{{ extend_size }}
-          "{{ item.item.split('|')[0] }}"
+        cmd: lvextend -r -L +5G "{{ item.item.split()[0] }}"
+      become: true
       loop: "{{ filesystem_usage_after_cleanup.results }}"
       when:
-        - expansion_required | bool
-        - item.stdout is defined
-        - item.stdout | trim | int >= usage_threshold
-        - rootvg_free_gb | float >= extend_size_gb | float
-
-
-    # =========================================================
-    # 17. Verify LV size
-    # =========================================================
-
-    - name: Verify LV size
-      ansible.builtin.command:
-        cmd: >
-          lvs --noheadings
-          --units g
-          --nosuffix
-          -o lv_path,lv_size
-          "{{ item.item.split('|')[0] }}"
-      loop: "{{ filesystem_usage_after_cleanup.results }}"
-      register: lv_size_after
-      changed_when: false
-      when:
-        - expansion_required | bool
-        - item.stdout is defined
-        - item.stdout | trim | int >= usage_threshold
-
-
-    - name: Display LV size after expansion
-      ansible.builtin.debug:
-        msg: "{{ item.stdout | trim }}"
-      loop: "{{ lv_size_after.results }}"
-      when: expansion_required | bool
-
-
-    # =========================================================
-    # 18. Verify filesystem usage
-    # =========================================================
-
-    - name: Verify filesystem usage after expansion
-      ansible.builtin.shell: |
-        df -P "{{ item.item.split('|')[1] }}" |
-        awk 'NR==2 {
-          gsub("%","",$5);
-          print $5
-        }'
-      loop: "{{ filesystem_usage_after_cleanup.results }}"
-      register: filesystem_usage_final
-      changed_when: false
-      when:
-        - expansion_required | bool
-        - item.stdout is defined
-        - item.stdout | trim | int >= usage_threshold
-
-
-    # =========================================================
-    # 19. Display final filesystem usage
-    # =========================================================
-
-    - name: Display final filesystem usage
-      ansible.builtin.debug:
-        msg:
-          - "Filesystem: {{ item.item.item.split('|')[1] }}"
-          - "Final usage: {{ item.stdout | trim }}%"
-      loop: "{{ filesystem_usage_final.results }}"
-      when: expansion_required | bool
+       - item.stdout | int >= usage_threshold
+       - rootvg_free.stdout | trim | float >= 5
