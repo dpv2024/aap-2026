@@ -193,28 +193,41 @@
     # =========================================================
     # 12. Display VG free space
     # =========================================================
-    - name: Display root-vg free space
-      ansible.builtin.debug:
-        msg:
-          - "VG: {{ target_vg }}"
-          - "Free space: {{ rootvg_free.stdout | trim }} GB"
-      when: expansion_required | bool
+- name: Check root-vg free space
+  ansible.builtin.command:
+    cmd: vgs --noheadings --units g --nosuffix -o vg_free root-vg
+  register: rootvg_free
+  changed_when: false
+  when: expansion_required | bool
+
+- name: Clean root-vg free space value
+  ansible.builtin.set_fact:
+    rootvg_free_gb: "{{ rootvg_free.stdout | trim | float }}"
+  when: expansion_required | bool
+
+- name: Display root-vg free space
+  ansible.builtin.debug:
+    msg:
+      - "VG: {{ target_vg }}"
+      - "Raw VG free: '{{ rootvg_free.stdout }}'"
+      - "VG free: {{ rootvg_free_gb }} GB"
+  when: expansion_required | bool
 
 
     # =========================================================
     # 13. Extend filesystems >= threshold
     # =========================================================
-    - name: Extend affected logical volumes by 5 GB
-      ansible.builtin.command:
-        cmd: >
-          lvextend -r -L +{{ extend_size }}
-          "{{ item.item.split()[0] }}"
-      loop: "{{ filesystem_usage_after_cleanup.results }}"
-      when:
-        - expansion_required | bool
-        - item.stdout is defined
-        - item.stdout | trim | int >= usage_threshold
-        - rootvg_free.stdout | trim | float >= extend_size_gb | float
+- name: Extend affected logical volume by 5 GB
+  ansible.builtin.command:
+    cmd: >
+      lvextend -r -L +{{ extend_size }}
+      "{{ item.item.split()[0] }}"
+  loop: "{{ filesystem_usage_after_cleanup.results }}"
+  when:
+    - expansion_required | bool
+    - item.stdout is defined
+    - item.stdout | trim | int >= usage_threshold
+    - rootvg_free_gb >= extend_size_gb
 
 
     # =========================================================
