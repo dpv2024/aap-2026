@@ -1,0 +1,28 @@
+---
+- name: Test AAP privilege escalation
+  hosts: all
+  remote_user: ansibleclient
+  become: true
+  gather_facts: false
+
+  tasks:
+
+    - name: Check effective user
+      ansible.builtin.command:
+        cmd: id
+      register: id_result
+      changed_when: false
+
+    - name: Display effective user
+      ansible.builtin.debug:
+        var: id_result.stdout
+
+    - name: Check LVM
+      ansible.builtin.command:
+        cmd: vgs root-vg
+      register: vgs_result
+      changed_when: false
+
+    - name: Display LVM result
+      ansible.builtin.debug:
+        var: vgs_result
