@@ -1,0 +1,16 @@
+---
+- name: webhook test
+  hosts: all
+
+  sources:
+    - ansible.eda.webhook:
+        host: 0.0.0.0
+        port: 5003
+
+  rules:
+    - name: Receive webhook
+      condition: event.payload.payload.event == "Disk-Cleanup-Check"
+      action:
+        run_job_template:
+          name: Disk-cleanup.yml
+          organization: Default
