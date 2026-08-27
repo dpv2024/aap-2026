@@ -2,7 +2,6 @@
 - name: Root-vg filesystem cleanup and expansion
   hosts: all
   become: true
-  remote_user: ansibleclient
   gather_facts: false
 
   vars:
