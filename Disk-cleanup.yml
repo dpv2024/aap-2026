@@ -18,7 +18,7 @@
     # ---------------------------------------------------------
     - name: Get root-vg logical volumes and mount points
       ansible.builtin.shell: |
-        lvs --noheadings --separator '|' \
+        sudo lvs --noheadings --separator '|' \
           -o lv_name,vg_name,lv_path |
         awk -F'|' '$2 ~ /{{ target_vg }}/ {
           gsub(/^[ \t]+|[ \t]+$/, "", $1);
@@ -160,15 +160,12 @@
 
     # ---------------------------------------------------------
     # 10. Check free space in root-vg
-    #
-    # IMPORTANT:
-    # Use command instead of shell/awk so that AAP gets
-    # the actual vgs output directly.
     # ---------------------------------------------------------
     - name: Check free space in root-vg
       ansible.builtin.command:
         cmd: >
-          vgs --noheadings
+          sudo vgs
+          --noheadings
           --units g
           --nosuffix
           -o vg_free
@@ -177,59 +174,52 @@
       changed_when: false
       when: filesystems_to_extend | length > 0
 
-    # ---------------------------------------------------------
-    # 10a. Convert VG free space to numeric value
-    # ---------------------------------------------------------
-    - name: Set root-vg free space in GB
-      ansible.builtin.set_fact:
-        rootvg_free_gb: "{{ rootvg_free.stdout | trim | float }}"
-      when: filesystems_to_extend | length > 0
-
-    # ---------------------------------------------------------
-    # 10b. Display free space
-    # ---------------------------------------------------------
     - name: Display root-vg free space
       ansible.builtin.debug:
         msg:
           - "VG: {{ target_vg }}"
-          - "Raw VG free: '{{ rootvg_free.stdout | trim }}'"
-          - "VG free: {{ rootvg_free_gb }} GB"
+          - "Free space: {{ rootvg_free.stdout | trim }} GB"
           - "Required: {{ extend_size_gb }} GB"
       when: filesystems_to_extend | length > 0
 
     # ---------------------------------------------------------
-    # 10c. Stop if VG does not have enough space
+    # 11. Stop if insufficient VG space
     # ---------------------------------------------------------
-    - name: Check sufficient free space in root-vg
+    - name: Stop if root-vg does not have enough space
       ansible.builtin.fail:
         msg: >-
-          {{ target_vg }} has only {{ rootvg_free_gb }} GB free.
-          {{ extend_size_gb }} GB is required to extend the LV.
+          {{ target_vg }} has only
+          {{ rootvg_free.stdout | trim }} GB free,
+          but {{ extend_size_gb }} GB is required.
       when:
         - filesystems_to_extend | length > 0
-        - rootvg_free_gb | float < extend_size_gb | float
+        - rootvg_free.stdout | trim | float < extend_size_gb | float
 
     # ---------------------------------------------------------
-    # 11. Extend affected LV by 5 GB
+    # 12. Extend affected LV
     # ---------------------------------------------------------
     - name: Extend affected logical volume
       ansible.builtin.command:
         cmd: >
-          lvextend -r -L +{{ extend_size }}
+          sudo lvextend
+          -r
+          -L +{{ extend_size }}
           "{{ item.split()[0] }}"
-      become: true
       loop: "{{ filesystems_to_extend }}"
       when:
         - filesystems_to_extend | length > 0
-        - rootvg_free_gb | float >= extend_size_gb | float
+        - rootvg_free.stdout | trim | float >= extend_size_gb | float
 
     # ---------------------------------------------------------
-    # 12. Verify filesystem usage after expansion
+    # 13. Verify filesystem usage after expansion
     # ---------------------------------------------------------
-    - name: Check filesystem usage after expansion
+    - name: Verify filesystem usage after expansion
       ansible.builtin.shell: |
         df -P "{{ item.split()[1] }}" |
-        awk 'NR==2 {gsub("%","",$5); print $5}'
+        awk 'NR==2 {
+          gsub("%","",$5);
+          print $5
+        }'
       loop: "{{ filesystems_to_extend }}"
       register: filesystem_usage_final
       changed_when: false
@@ -237,6 +227,6 @@
 
     - name: Display final filesystem usage
       ansible.builtin.debug:
-        msg: "{{ item.item.split('|')[1] }} => {{ item.stdout }}%"
+        msg: "{{ item.item.split()[1] }} => {{ item.stdout }}%"
       loop: "{{ filesystem_usage_final.results }}"
       when: filesystems_to_extend | length > 0
