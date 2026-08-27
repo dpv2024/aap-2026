@@ -1,0 +1,26 @@
+---
+- name: Test privilege escalation
+  hosts: all
+  remote_user: ansibleclient
+  become: true
+  gather_facts: false
+
+  tasks:
+
+    - name: Check effective user
+      ansible.builtin.command:
+        cmd: id
+      register: id_result
+
+    - name: Display effective user
+      ansible.builtin.debug:
+        var: id_result.stdout
+
+    - name: Test VGS
+      ansible.builtin.command:
+        cmd: vgs root-vg
+      register: vgs_result
+
+    - name: Display VGS
+      ansible.builtin.debug:
+        var: vgs_result.stdout_lines
