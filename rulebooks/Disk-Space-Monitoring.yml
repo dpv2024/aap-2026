@@ -11,6 +11,6 @@
     - name: Receive webhook
       condition: event.payload.payload.event == "Disk-Cleanup-Check"
       action:
-        run_job_template:
-          name: Uptimecheck
+        run_workflow_template:
+          name: FilesystemManagement
           organization: Default
