@@ -1,0 +1,22 @@
+---
+- name: Grant testuser temporary sudo access
+  hosts: 192.168.1.11
+  become: true
+  tasks:
+    - name: Grant testuser sudo access
+      ansible.builtin.copy:
+        dest: /etc/sudoers.d/temp-root-testuser
+        content: "testuser ALL=(ALL:ALL) ALL\n"
+        owner: root
+        group: root
+        mode: "0440"
+        validate: "/usr/sbin/visudo -cf %s"
+
+    - name: Keep access for seven days
+      ansible.builtin.pause:
+        seconds: 604800
+
+    - name: Revoke testuser sudo access
+      ansible.builtin.file:
+        path: /etc/sudoers.d/temp-root-testuser
+        state: absent
