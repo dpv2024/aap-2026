@@ -2,6 +2,7 @@
 - name: Grant testuser temporary sudo access
   hosts: 192.168.1.11
   become: true
+  become_method: sudo
   remote_user: ansibleclient
   tasks:
     - name: Grant testuser sudo access
