@@ -10,6 +10,8 @@
   tasks:
     - name: Grant testuser sudo access
       ansible.builtin.copy:
+      become: true
+      become_user: root
         dest: /etc/sudoers.d/temp-root-testuser
         content: "testuser ALL=(ALL:ALL) ALL\n"
         owner: root
