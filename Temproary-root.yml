@@ -22,7 +22,7 @@
 
     - name: Confirm sudoers configuration
       ansible.builtin.command:
-        cmd: /usr/sbin/visudo -c
+        cmd: sudo /usr/sbin/visudo -c
       changed_when: false
 
     - name: Wait 24 hours before revoking access
