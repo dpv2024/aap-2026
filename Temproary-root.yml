@@ -1,5 +1,6 @@
+
 ---
-- name: Grant testuser temporary sudo access
+- name: Grant temporary sudo access and revoke after 1 day
   hosts: 192.168.1.11
   become: true
   become_method: sudo
@@ -8,20 +9,34 @@
 
   tasks:
     - name: Grant testuser sudo access
-      ansible.builtin.shell: |
-        sudo echo 'testuser ALL=(ALL:ALL) ALL' > /etc/sudoers.d/temp-root-testuser
-        sudo chown root:root /etc/sudoers.d/temp-root-testuser
-        sudo chmod 0440 /etc/sudoers.d/temp-root-testuser
-        sudo /usr/sbin/visudo -cf /etc/sudoers.d/temp-root-testuser
-      args:
-        executable: /bin/bash
+      ansible.builtin.copy:
+        dest: /etc/sudoers.d/temp-root-testuser
+        content: "testuser ALL=(ALL:ALL) ALL\n"
+        owner: root
+        group: root
+        mode: '0440'
+        validate: '/usr/sbin/visudo -cf %s'
 
-    - name: Keep access for seven days
+    - name: Confirm sudoers configuration
+      ansible.builtin.command:
+        cmd: /usr/sbin/visudo -c
+      changed_when: false
+
+    - name: Wait 24 hours before revoking access
       ansible.builtin.pause:
-        seconds: 604800
+        seconds: 86400
+        prompt: "Temporary sudo access is active. Waiting 24 hours before revocation."
 
     - name: Revoke testuser sudo access
-      ansible.builtin.shell: |
-        rm -f /etc/sudoers.d/temp-root-testuser
-      args:
-        executable: /bin/bash
+      ansible.builtin.file:
+        path: /etc/sudoers.d/temp-root-testuser
+        state: absent
+
+    - name: Validate sudoers configuration after revocation
+      ansible.builtin.command:
+        cmd: /usr/sbin/visudo -c
+      changed_when: false
+
+    - name: Confirm revocation
+      ansible.builtin.debug:
+        msg: "Temporary sudo access has been revoked after 24 hours."
