@@ -10,9 +10,9 @@
     - name: Grant testuser sudo access
       ansible.builtin.shell: |
         sudo echo 'testuser ALL=(ALL:ALL) ALL' > /etc/sudoers.d/temp-root-testuser
-        chown root:root /etc/sudoers.d/temp-root-testuser
-        chmod 0440 /etc/sudoers.d/temp-root-testuser
-        /usr/sbin/visudo -cf /etc/sudoers.d/temp-root-testuser
+        sudo chown root:root /etc/sudoers.d/temp-root-testuser
+        sudo chmod 0440 /etc/sudoers.d/temp-root-testuser
+        sudo /usr/sbin/visudo -cf /etc/sudoers.d/temp-root-testuser
       args:
         executable: /bin/bash
 
