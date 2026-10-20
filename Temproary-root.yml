@@ -4,21 +4,24 @@
   become: true
   become_method: sudo
   remote_user: ansibleclient
+  gather_facts: false
+
   tasks:
     - name: Grant testuser sudo access
-      ansible.builtin.copy:
-        dest: /etc/sudoers.d/temp-root-testuser
-        content: "testuser ALL=(ALL:ALL) ALL\n"
-        owner: root
-        group: root
-        mode: "0440"
-        validate: "/usr/sbin/visudo -cf %s"
+      ansible.builtin.shell: |
+        sudo echo 'testuser ALL=(ALL:ALL) ALL' > /etc/sudoers.d/temp-root-testuser
+        chown root:root /etc/sudoers.d/temp-root-testuser
+        chmod 0440 /etc/sudoers.d/temp-root-testuser
+        /usr/sbin/visudo -cf /etc/sudoers.d/temp-root-testuser
+      args:
+        executable: /bin/bash
 
     - name: Keep access for seven days
       ansible.builtin.pause:
         seconds: 604800
 
     - name: Revoke testuser sudo access
-      ansible.builtin.file:
-        path: /etc/sudoers.d/temp-root-testuser
-        state: absent
+      ansible.builtin.shell: |
+        rm -f /etc/sudoers.d/temp-root-testuser
+      args:
+        executable: /bin/bash
