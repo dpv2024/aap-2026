@@ -1,0 +1,18 @@
+---
+- name: Infrastructure monitoring webhook
+  hosts: all
+
+  sources:
+    - ansible.eda.webhook:
+        host: 0.0.0.0
+        port: 5010
+
+  rules:
+
+    # GrantRoot
+    - name: GrantRoot
+      condition: event.payload is defined 
+      action:
+        run_job_template:
+          name: Temporaryroot
+          organization: Default
